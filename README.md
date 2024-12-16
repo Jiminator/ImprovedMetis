@@ -7,7 +7,7 @@ To run this project, you need to install the required packages. Follow the steps
 
 1. Clone the repository: 
 ```bash
-git clone https://github.com/livingshade/Metis.git
+https://github.com/kartikx/Metis.git
 ```
 
 1. Navigate to the project directory:
