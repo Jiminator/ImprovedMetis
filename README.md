@@ -19,8 +19,8 @@ cd Metis
 1. Install dependencies using the requirements.txt file: 
 ```bash
 # If using conda
-conda create -n HTDR python=3.11 pip -y
-conda activate HTDR
+conda create -n GenAI python=3.11 pip -y
+conda activate GenAI
 
 pip install -r requirements.txt
 ```
