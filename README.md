@@ -1,4 +1,4 @@
-# Final Code for CS598: How to do Research (Group 3)
+# Final Code for CS598: Systems for GenAI
 
 This repository contains code to reproduce the experiments of our work with Improved Intra-Operator Parallelism for Distributed LLM
 Training.
