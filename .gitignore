@@ -1,4 +1,9 @@
 
+/profile
 /__pycache__
 /model/__pycache__
 /search_space/__pycache__
+/profile
+.DS_Store
+hostfile
+logs/GPT_1.5B.log

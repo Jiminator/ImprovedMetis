@@ -35,6 +35,7 @@ class IntraStagePlan:
     memory_state: List[float]
     layer_partition: List[int]
     num_repartition: int
+    failed_memory_stage: List[int]
 
 
 class UniformPlanGenerator:
@@ -177,7 +178,7 @@ class InterStagePlanGenerator:
 
 class IntraStagePlanGenerator:
     def __init__(self, inter_stage_plan: InterStagePlan, stage_performance: StagePerformance,
-                 layer_load_balancer: LayerLoadBalancer, max_tp_degree: int, max_bs: int):
+                 layer_load_balancer: LayerLoadBalancer, max_tp_degree: int, max_bs: int, strat: bool):
         self.inter_stage_plan = inter_stage_plan
         self.device_groups = inter_stage_plan.device_groups
         self.gbs = inter_stage_plan.gbs
@@ -186,43 +187,54 @@ class IntraStagePlanGenerator:
         self.layer_load_balancer = layer_load_balancer
         self.max_tp_degree = max_tp_degree
         self.max_bs = max_bs
+        self.count = 0
+        self.strat = strat
 
-        self.curr = IntraStagePlan(strategies=[], memory_state=[], layer_partition=[], num_repartition=0)
+        self.curr = IntraStagePlan(strategies=[], memory_state=[], layer_partition=[], num_repartition=0, failed_memory_stage=[])
 
     @property
     def has_next(self) -> bool:
+        self.count = 0
         if self.curr.num_repartition == 1:
             return False
-
+        failed_memory_stage = []
         while True:
             if not self.curr.strategies:
                 self.curr.strategies = self._initial_strategies()
             else:
-                self.curr.strategies = self._next_strategy(copy.deepcopy(self.curr.strategies))
+                # print('DFS STEP')
+                self.count += 1
+                # print("prev_strategies: ", self.curr.strategies) 
+                if (self.strat):
+                    self.curr.strategies = self._next_strategy(copy.deepcopy(self.curr.strategies), use_strat=True)
+                else:
+                    self.curr.strategies = self._next_strategy(copy.deepcopy(self.curr.strategies))
 
             if not self.curr.strategies:
                 return False
 
             if self._is_valid_strategies(self.curr.strategies):
-                print(f'valid_strategies: {self.curr.strategies}')
+                # print(f'valid_strategies: {self.curr.strategies}')
                 stage_memory_capacity = self.stage_performance.get_device_group_memory_capacity()
                 intra_stage_compute_performance = self.stage_performance.get_intra_stage_compute_performance(
                     self.curr.strategies, self.gbs, self.batches)
-                print(f'stage_memory_capacity: {stage_memory_capacity}')
-                print(f'stage_compute_performance: {intra_stage_compute_performance}')
+                # print(f'stage_memory_capacity: {stage_memory_capacity}')
+                # print(f'stage_compute_performance: {intra_stage_compute_performance}')
 
-                layer_partition, num_repartition, memory_state = (
+                layer_partition, num_repartition, memory_state, failed_memory_stage, new_partition_count = (
                     self.layer_load_balancer.partition_layer(self.inter_stage_plan, self.curr.strategies,
                                                              intra_stage_compute_performance, stage_memory_capacity))
-
-                print(f'layer_partition: {layer_partition}')
+                self.count += new_partition_count
+                # print(f'layer_partition: {layer_partition}')
                 if layer_partition:
                     self.curr.layer_partition = layer_partition
                     self.curr.memory_state = memory_state
                     self.curr.num_repartition = num_repartition
+                    self.curr.failed_memory_stage = failed_memory_stage
                     return True
                 else:
                     self.curr.memory_state = memory_state
+                    self.curr.failed_memory_stage = failed_memory_stage
                     continue
 
     def next(self) -> IntraStagePlan:
@@ -240,29 +252,40 @@ class IntraStagePlanGenerator:
             mbs = self.gbs // dp_deg // self.batches
             if mbs == 0 or mbs > self.max_bs:
                 # log for debugging
-                print(f'invalid_strategy: dp_deg({dp_deg}), batches({self.batches}), mbs(0)')
+                # print(f'invalid_strategy: dp_deg({dp_deg}), batches({self.batches}), mbs(0)')
                 return False
             if tp_deg > self.max_tp_degree:
                 # log for debugging
-                print(f'invalid_strategy: tp_deg({tp_deg})')
+                # print(f'invalid_strategy: tp_deg({tp_deg})')
                 return False
         return True
 
-    def _next_strategy(self, strategies: List[Tuple[int, int]]) -> Union[List[Tuple[int, int]], None]:
-        if self.curr.memory_state:
-            memory_state = self.curr.memory_state
+    def _next_strategy(self, strategies: List[Tuple[int, int]], use_strat=False) -> Union[List[Tuple[int, int]], None]:
+        if use_strat:
+            if self.curr.failed_memory_stage != []:
+                memory_state = self.curr.failed_memory_stage
+            elif self.curr.memory_state:
+                memory_state = self.curr.memory_state
+            else:
+                memory_state = [1 / dp_deg for (dp_deg, tp_deg) in self.curr.strategies]
         else:
-            memory_state = [1 / dp_deg for (dp_deg, tp_deg) in self.curr.strategies]
+            if self.curr.memory_state:
+                memory_state = self.curr.memory_state
+            else:
+                memory_state = [1 / dp_deg for (dp_deg, tp_deg) in self.curr.strategies]
+
 
         memory_state_dict = {}
         for stage_id, memory_state in enumerate(memory_state):
             memory_state_dict[stage_id] = memory_state
 
         sorted_stage_id = sorted(memory_state_dict, key=lambda x: memory_state_dict[x])
+        # print("sorted_stage_id: ", sorted_stage_id)
         for stage_id in sorted_stage_id:
             dp_deg, tp_deg = strategies[stage_id]
             if dp_deg != 1:
                 strategies[stage_id] = (dp_deg // 2, tp_deg * 2)
+                # print("Adjusting stage: ", stage_id)
                 return strategies
 
         return None
