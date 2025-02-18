@@ -1,6 +1,6 @@
 # Improved Model Sharding for Distributed LLM Training
 This repository contains code for our final project for CS 598: Systems for GenAI
- - [Paper Link](Systems_for_GenAI_Final_Paper.pdf)
+ - [Paper Link](Paper.pdf)
 
 This repository contains code to reproduce the experiments of our work with Improved Model Sharding for Distributed LLM Training.
 
